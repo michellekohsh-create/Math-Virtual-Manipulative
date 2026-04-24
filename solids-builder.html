@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solids Builder with Cubes</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, sans-serif; background: #f4f2ee; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+#app { display: flex; flex-direction: column; height: 100vh; padding: 8px; gap: 6px; }
+#title-bar { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+#title-bar h1 { font-size: 14px; font-weight: 700; color: #2c2c2a; letter-spacing: -0.01em; }
+#main { display: flex; gap: 8px; flex: 1; min-height: 0; }
+
+/* 3D Canvas */
+#canvas-wrap { flex: 1; position: relative; background: #f0ede8; border: 1px solid #ddd9d0; border-radius: 10px; overflow: hidden; }
+#c3d { width: 100%; height: 100%; display: block; cursor: grab; }
+#c3d:active { cursor: grabbing; }
+#mode-badge { position: absolute; top: 8px; left: 8px; font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; background: rgba(255,255,255,0.92); border: 1px solid #ddd; color: #555; pointer-events: none; }
+
+/* Right panel */
+#panel { width: 226px; flex-shrink: 0; display: flex; flex-direction: column; border: 1px solid #ddd9d0; border-radius: 10px; overflow: hidden; background: #fff; overflow-y: auto; }
+.sec { padding: 8px 11px; border-bottom: 1px solid #f0eee9; flex-shrink: 0; }
+.sec:last-child { border-bottom: none; }
+.sec-lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: #aaa; margin-bottom: 6px; }
+
+/* Volume */
+.vol-num { font-size: 26px; font-weight: 700; color: #2c2c2a; line-height: 1; }
+.vol-unit { font-size: 12px; color: #999; margin-left: 3px; }
+
+/* Buttons */
+.btn { font-size: 11px; font-weight: 500; padding: 4px 9px; border-radius: 14px; border: 1px solid #ccc; background: #f5f4f0; cursor: pointer; color: #555; transition: all .12s; }
+.btn:hover { background: #ece9e2; }
+.btn.active { background: #e6f1fb; border-color: #378add; color: #185fa5; }
+.btn.active-green { background: #eaf3de; border-color: #639922; color: #3b6d11; }
+.btn.active-red { background: #fcebeb; border-color: #e24b4a; color: #a32d2d; }
+.btn-row { display: flex; gap: 4px; flex-wrap: wrap; }
+.mode-row { display: flex; gap: 4px; margin-bottom: 5px; }
+.mode-row .btn { flex: 1; text-align: center; }
+
+/* View panels — student draw then check */
+.view-panel { margin-bottom: 8px; }
+.view-panel:last-child { margin-bottom: 0; }
+.view-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 3px; }
+.view-label { font-size: 10px; font-weight: 700; }
+.lbl-blue { color: #185fa5; }
+.lbl-red { color: #a32d2d; }
+.lbl-green { color: #3b6d11; }
+.view-actions { display: flex; gap: 3px; }
+
+/* Clickable grid canvas */
+canvas.draw-grid { border-radius: 4px; display: block; cursor: pointer; }
+
+/* Overlay feedback */
+.view-result { font-size: 10px; font-weight: 600; margin-top: 3px; height: 14px; }
+.correct { color: #3b6d11; }
+.wrong { color: #a32d2d; }
+
+select { width: 100%; font-size: 11px; padding: 4px 6px; border-radius: 6px; border: 1px solid #ccc; background: #f5f4f0; color: #333; }
+
+#legend { font-size: 10px; color: #aaa; flex-shrink: 0; display: flex; flex-wrap: wrap; gap: 6px; padding: 1px 2px; }
+.leg-blue { color: #185fa5; font-weight: 600; }
+.leg-red { color: #a32d2d; font-weight: 600; }
+.leg-green { color: #3b6d11; font-weight: 600; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="title-bar">
+    <h1>Solids Builder with Cubes — P5 Mathematics</h1>
+  </div>
+  <div id="main">
+    <div id="canvas-wrap">
+      <canvas id="c3d"></canvas>
+      <div id="mode-badge">Add mode</div>
+    </div>
+
+    <div id="panel">
+      <!-- Volume -->
+      <div class="sec">
+        <div class="sec-lbl">Volume</div>
+        <span class="vol-num" id="vol-count">0</span><span class="vol-unit">unit³</span>
+      </div>
+
+      <!-- Mode -->
+      <div class="sec">
+        <div class="sec-lbl">Build</div>
+        <div class="mode-row">
+          <button class="btn active" id="btn-add">Add</button>
+          <button class="btn" id="btn-remove">Remove</button>
+        </div>
+        <button class="btn" id="btn-clear" style="width:100%;text-align:center;">Clear all</button>
+      </div>
+
+      <!-- Display toggles -->
+      <div class="sec">
+        <div class="sec-lbl">Show / Hide</div>
+        <div class="btn-row">
+          <button class="btn" id="btn-xray">X-ray</button>
+          <button class="btn active" id="btn-walls">Walls</button>
+        </div>
+      </div>
+
+      <!-- Orthographic views — student draw + check -->
+      <div class="sec">
+        <div class="sec-lbl">Orthographic Views</div>
+        <p style="font-size:10px;color:#999;margin-bottom:8px;line-height:1.4;">Click squares to draw each view, then press Check.</p>
+
+        <!-- Top view -->
+        <div class="view-panel">
+          <div class="view-header">
+            <span class="view-label lbl-blue">Top view (↓)</span>
+            <div class="view-actions">
+              <button class="btn" style="font-size:10px;padding:2px 7px;" onclick="checkView('top')">Check</button>
+              <button class="btn" style="font-size:10px;padding:2px 7px;" onclick="clearStudentView('top')">Clear</button>
+            </div>
+          </div>
+          <canvas class="draw-grid" id="dTop" width="100" height="100" style="border:1.5px solid #b5d4f4;width:100px;height:100px;"></canvas>
+          <div class="view-result" id="res-top"></div>
+        </div>
+
+        <!-- Front view -->
+        <div class="view-panel">
+          <div class="view-header">
+            <span class="view-label lbl-red">Front view (→)</span>
+            <div class="view-actions">
+              <button class="btn" style="font-size:10px;padding:2px 7px;" onclick="checkView('front')">Check</button>
+              <button class="btn" style="font-size:10px;padding:2px 7px;" onclick="clearStudentView('front')">Clear</button>
+            </div>
+          </div>
+          <canvas class="draw-grid" id="dFront" width="100" height="100" style="border:1.5px solid #f7c1c1;width:100px;height:100px;"></canvas>
+          <div class="view-result" id="res-front"></div>
+        </div>
+
+        <!-- Side view -->
+        <div class="view-panel">
+          <div class="view-header">
+            <span class="view-label lbl-green">Side view — right (←)</span>
+            <div class="view-actions">
+              <button class="btn" style="font-size:10px;padding:2px 7px;" onclick="checkView('side')">Check</button>
+              <button class="btn" style="font-size:10px;padding:2px 7px;" onclick="clearStudentView('side')">Clear</button>
+            </div>
+          </div>
+          <canvas class="draw-grid" id="dSide" width="100" height="100" style="border:1.5px solid #c0dd97;width:100px;height:100px;"></canvas>
+          <div class="view-result" id="res-side"></div>
+        </div>
+
+        <button class="btn" id="btn-reveal" style="width:100%;text-align:center;margin-top:4px;">Reveal answers</button>
+        <div id="reveal-area" style="display:none;margin-top:8px;">
+          <div style="font-size:10px;color:#999;margin-bottom:4px;">Correct answers:</div>
+          <div style="display:flex;gap:5px;">
+            <div>
+              <div style="font-size:9px;font-weight:700;color:#185fa5;margin-bottom:2px;">Top</div>
+              <canvas id="aTop" width="60" height="60" style="border:1px solid #b5d4f4;border-radius:3px;width:60px;height:60px;display:block;"></canvas>
+            </div>
+            <div>
+              <div style="font-size:9px;font-weight:700;color:#a32d2d;margin-bottom:2px;">Front</div>
+              <canvas id="aFront" width="60" height="60" style="border:1px solid #f7c1c1;border-radius:3px;width:60px;height:60px;display:block;"></canvas>
+            </div>
+            <div>
+              <div style="font-size:9px;font-weight:700;color:#3b6d11;margin-bottom:2px;">Side</div>
+              <canvas id="aSide" width="60" height="60" style="border:1px solid #c0dd97;border-radius:3px;width:60px;height:60px;display:block;"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Presets -->
+      <div class="sec">
+        <div class="sec-lbl">Load Preset</div>
+        <select id="preset-sel">
+          <option value="">-- choose shape --</option>
+          <option value="cube2">Cube (2×2×2)</option>
+          <option value="cube3">Cube (3×3×3)</option>
+          <option value="rect">Cuboid (4×3×2)</option>
+          <option value="lshape">L-shape</option>
+          <option value="staircase">Staircase</option>
+          <option value="tower">Tower</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div id="legend">
+    <span>Drag to rotate</span><span>·</span>
+    <span>Scroll to zoom</span><span>·</span>
+    <span>Click face/ground to add</span><span>·</span>
+    <span>Remove: click cube</span><span>·</span>
+    <span class="leg-blue">Blue = Top</span><span>·</span>
+    <span class="leg-red">Red = Front</span><span>·</span>
+    <span class="leg-green">Green = Side (R)</span>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+// STUDENT VIEW GRIDS — clickable shaded squares
+// ═══════════════════════════════════════════════
+const GDIM = 6; // grid dimension for student views
+const GCW  = 100; // canvas pixel size
+const GCELL = Math.floor(GCW / GDIM); // pixels per cell
+const GPAD  = Math.floor((GCW - GCELL * GDIM) / 2);
+
+// Student drawings: Set of "col,row" strings
+const studentGrids = { top: new Set(), front: new Set(), side: new Set() };
+
+const VIEW_CONFIG = {
+  top:   { canvas: 'dTop',   answer: 'aTop',   result: 'res-top',   fill: '#85b7eb', grid: '#bcd5f0', border: '#378add' },
+  front: { canvas: 'dFront', answer: 'aFront', result: 'res-front', fill: '#f09595', grid: '#ecc8c8', border: '#e24b4a' },
+  side:  { canvas: 'dSide',  answer: 'aSide',  result: 'res-side',  fill: '#97c459', grid: '#c4de9a', border: '#639922' }
+};
+
+function drawStudentGrid(viewId) {
+  const cfg = VIEW_CONFIG[viewId];
+  const cv  = document.getElementById(cfg.canvas);
+  const ctx = cv.getContext('2d');
+  const sz  = GCW;
+  ctx.clearRect(0, 0, sz, sz);
+  ctx.fillStyle = '#fafaf8';
+  ctx.fillRect(0, 0, sz, sz);
+
+  for (let col = 0; col < GDIM; col++) {
+    for (let row = 0; row < GDIM; row++) {
+      const px = GPAD + col * GCELL;
+      const py = GPAD + (GDIM - 1 - row) * GCELL; // row 0 = bottom
+      if (studentGrids[viewId].has(`${col},${row}`)) {
+        ctx.fillStyle = cfg.fill;
+        ctx.fillRect(px + 1, py + 1, GCELL - 2, GCELL - 2);
+      }
+      ctx.strokeStyle = cfg.grid;
+      ctx.lineWidth = 0.8;
+      ctx.strokeRect(px, py, GCELL, GCELL);
+    }
+  }
+  ctx.strokeStyle = cfg.border;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(GPAD, GPAD, GCELL * GDIM, GCELL * GDIM);
+}
+
+function setupGridClick(viewId) {
+  const cfg = VIEW_CONFIG[viewId];
+  const cv  = document.getElementById(cfg.canvas);
+  let painting = false, paintMode = null;
+
+  function getCellFromEvent(e) {
+    const rect = cv.getBoundingClientRect();
+    const scaleX = GCW / rect.width;
+    const scaleY = GCW / rect.height;
+    const mx = (e.clientX - rect.left) * scaleX;
+    const my = (e.clientY - rect.top)  * scaleY;
+    const col = Math.floor((mx - GPAD) / GCELL);
+    const row = GDIM - 1 - Math.floor((my - GPAD) / GCELL);
+    if (col < 0 || col >= GDIM || row < 0 || row >= GDIM) return null;
+    return { col, row };
+  }
+
+  function applyCell(e) {
+    const cell = getCellFromEvent(e);
+    if (!cell) return;
+    const k = `${cell.col},${cell.row}`;
+    if (paintMode === 'add')    studentGrids[viewId].add(k);
+    if (paintMode === 'remove') studentGrids[viewId].delete(k);
+    drawStudentGrid(viewId);
+    // clear result when grid changes
+    document.getElementById(cfg.result).textContent = '';
+  }
+
+  cv.addEventListener('mousedown', e => {
+    const cell = getCellFromEvent(e);
+    if (!cell) return;
+    const k = `${cell.col},${cell.row}`;
+    paintMode = studentGrids[viewId].has(k) ? 'remove' : 'add';
+    painting = true;
+    applyCell(e);
+  });
+  cv.addEventListener('mousemove', e => { if (painting) applyCell(e); });
+  window.addEventListener('mouseup', () => { painting = false; paintMode = null; });
+}
+
+// ── Get answer set (raw coordinates) ────────────────
+function getAnswerSet(viewId) {
+  const cs = Object.values(cubes);
+  const occ = new Set();
+  if (viewId === 'front') cs.forEach(c => occ.add(`${c.x},${c.y}`));
+  if (viewId === 'top')   cs.forEach(c => occ.add(`${c.x},${c.z}`));
+  if (viewId === 'side')  cs.forEach(c => occ.add(`${c.z},${c.y}`));
+  return occ;
+}
+
+// Normalise a Set of "col,row" strings so its bounding box starts at (0,0)
+function normaliseShape(setOfKeys) {
+  if (setOfKeys.size === 0) return new Set();
+  const pairs = [...setOfKeys].map(k => k.split(',').map(Number));
+  const minC = Math.min(...pairs.map(([c]) => c));
+  const minR = Math.min(...pairs.map(([,r]) => r));
+  return new Set(pairs.map(([c, r]) => `${c - minC},${r - minR}`));
+}
+
+window.checkView = function(viewId) {
+  const rawAnswer  = getAnswerSet(viewId);
+  const cfg = VIEW_CONFIG[viewId];
+  const resEl = document.getElementById(cfg.result);
+
+  if (rawAnswer.size === 0) { resEl.textContent = 'Build a solid first!'; resEl.className = 'view-result wrong'; return; }
+
+  const normAnswer  = normaliseShape(rawAnswer);
+  const normStudent = normaliseShape(studentGrids[viewId]);
+
+  const correct =
+    normAnswer.size === normStudent.size &&
+    [...normAnswer].every(k => normStudent.has(k));
+
+  if (correct) {
+    resEl.textContent = '✓ Correct!';
+    resEl.className = 'view-result correct';
+  } else {
+    const hits = [...normAnswer].filter(k => normStudent.has(k)).length;
+    resEl.textContent = `✗ Not quite — ${hits}/${normAnswer.size} cells correct`;
+    resEl.className = 'view-result wrong';
+  }
+};
+
+window.clearStudentView = function(viewId) {
+  studentGrids[viewId].clear();
+  drawStudentGrid(viewId);
+  document.getElementById(VIEW_CONFIG[viewId].result).textContent = '';
+};
+
+// ── Draw small answer canvases ─────────────────────
+function drawAnswerView(canvasId, viewId) {
+  const cv  = document.getElementById(canvasId);
+  const ctx = cv.getContext('2d');
+  const SZ  = 60;
+  const cfg  = VIEW_CONFIG[viewId];
+  const rawAns = getAnswerSet(viewId);
+  ctx.clearRect(0, 0, SZ, SZ);
+  ctx.fillStyle = '#fafaf8'; ctx.fillRect(0, 0, SZ, SZ);
+  if (rawAns.size === 0) return;
+
+  // Find bounding box of answer
+  const pairs = [...rawAns].map(k => k.split(',').map(Number));
+  const minC = Math.min(...pairs.map(([c]) => c));
+  const minR = Math.min(...pairs.map(([,r]) => r));
+  const maxC = Math.max(...pairs.map(([c]) => c));
+  const maxR = Math.max(...pairs.map(([,r]) => r));
+  const cols = maxC - minC + 1, rows = maxR - minR + 1;
+  const cell = Math.min(Math.floor((SZ - 4) / Math.max(cols, rows, 1)), 14);
+  const padX = Math.floor((SZ - cols * cell) / 2);
+  const padY = Math.floor((SZ - rows * cell) / 2);
+
+  for (let c = minC; c <= maxC; c++) {
+    for (let r = minR; r <= maxR; r++) {
+      const dc = c - minC, dr = r - minR;
+      const px = padX + dc * cell;
+      const py = padY + (rows - 1 - dr) * cell;
+      if (rawAns.has(`${c},${r}`)) { ctx.fillStyle = cfg.fill; ctx.fillRect(px+0.5, py+0.5, cell-1, cell-1); }
+      ctx.strokeStyle = cfg.grid; ctx.lineWidth = 0.5; ctx.strokeRect(px, py, cell, cell);
+    }
+  }
+  ctx.strokeStyle = cfg.border; ctx.lineWidth = 1;
+  ctx.strokeRect(padX, padY, cols * cell, rows * cell);
+}
+
+document.getElementById('btn-reveal').addEventListener('click', function() {
+  const area = document.getElementById('reveal-area');
+  const showing = area.style.display !== 'none';
+  area.style.display = showing ? 'none' : 'block';
+  this.textContent = showing ? 'Reveal answers' : 'Hide answers';
+  if (!showing) {
+    drawAnswerView('aTop', 'top');
+    drawAnswerView('aFront', 'front');
+    drawAnswerView('aSide', 'side');
+  }
+});
+
+// ── Init student grids ──────────────────────────────
+['top','front','side'].forEach(v => {
+  setupGridClick(v);
+  drawStudentGrid(v);
+});
+
+// ═══════════════════════════════════════════════
+// THREE.JS 3D SCENE
+// ═══════════════════════════════════════════════
+const GRID = 8;
+let cubes = {}, mode = 'add', xray = false, wallsOn = true;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xf0ede8);
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
+const orb = { theta: 0.62, phi: 0.82, radius: 18 };
+
+function camUpdate() {
+  const cx = 3, cy = 2, cz = 3;
+  camera.position.set(
+    cx + orb.radius * Math.sin(orb.phi) * Math.sin(orb.theta),
+    cy + orb.radius * Math.cos(orb.phi),
+    cz + orb.radius * Math.sin(orb.phi) * Math.cos(orb.theta)
+  );
+  camera.lookAt(cx, cy, cz);
+}
+camUpdate();
+
+const c3d = document.getElementById('c3d');
+const renderer = new THREE.WebGLRenderer({ canvas: c3d, antialias: true });
+
+function onResize() {
+  const wrap = document.getElementById('canvas-wrap');
+  renderer.setSize(wrap.clientWidth, wrap.clientHeight, false);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  camera.aspect = wrap.clientWidth / wrap.clientHeight;
+  camera.updateProjectionMatrix();
+}
+onResize();
+window.addEventListener('resize', onResize);
+new ResizeObserver(onResize).observe(document.getElementById('canvas-wrap'));
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+const dl = new THREE.DirectionalLight(0xffffff, 0.6); dl.position.set(10, 15, 8); scene.add(dl);
+const dl2 = new THREE.DirectionalLight(0xffffff, 0.2); dl2.position.set(-6, 4, -8); scene.add(dl2);
+
+const gridH = new THREE.GridHelper(GRID, GRID, 0xbbbbaa, 0xccccbb);
+gridH.position.set(3.5, -0.499, 3.5); scene.add(gridH);
+
+const wallGroup = new THREE.Group(); scene.add(wallGroup);
+function makeWall(w, h, color, pos, rot) {
+  const geo = new THREE.PlaneGeometry(w, h);
+  const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.1, side: THREE.DoubleSide, depthWrite: false }));
+  m.position.set(...pos); if (rot) m.rotation.set(...rot);
+  m.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.4 })));
+  wallGroup.add(m);
+}
+makeWall(GRID, GRID, 0x888888, [3.5, -0.5, 3.5], [Math.PI / 2, 0, 0]);
+makeWall(GRID, GRID, 0xcc4444, [3.5, 3.5, -0.5], [0, 0, 0]);
+makeWall(GRID, GRID, 0x449933, [7.5, 3.5, 3.5], [0, Math.PI / 2, 0]);
+
+scene.add(new THREE.ArrowHelper(new THREE.Vector3(0, -1, 0), new THREE.Vector3(3.5, 8, 3.5), 1.5, 0x185fa5, 0.5, 0.35));
+scene.add(new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), new THREE.Vector3(3.5, 3.5, 7.5), 1.5, 0xcc4444, 0.5, 0.35));
+scene.add(new THREE.ArrowHelper(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(8.5, 3.5, 3.5), 1.5, 0x3b6d11, 0.5, 0.35));
+
+function makeLabel(text, color, pos) {
+  const cv = document.createElement('canvas'); cv.width = 180; cv.height = 52;
+  const ctx = cv.getContext('2d'); ctx.font = 'bold 24px sans-serif'; ctx.fillStyle = color; ctx.fillText(text, 4, 36);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthTest: false }));
+  sp.scale.set(2.5, 0.8, 1); sp.position.set(...pos); scene.add(sp);
+}
+makeLabel('TOP', '#185fa5', [3.5, 10.4, 3.5]);
+makeLabel('FRONT', '#cc4444', [3.5, 3.5, 10.0]);
+makeLabel('SIDE (R)', '#3b6d11', [11.0, 3.5, 3.5]);
+
+const baseGeo = new THREE.BoxGeometry(1, 1, 1);
+const edgeGeo = new THREE.EdgesGeometry(baseGeo);
+const mkSolidMat = () => new THREE.MeshLambertMaterial({ color: 0x378add });
+const mkXrayMat  = () => new THREE.MeshLambertMaterial({ color: 0x85b7eb, transparent: true, opacity: 0.2, depthWrite: false });
+const mkEdgeMat  = () => new THREE.LineBasicMaterial({ color: 0x0c447c, transparent: true, opacity: 0.6 });
+const mkEdgeXMat = () => new THREE.LineBasicMaterial({ color: 0x185fa5, transparent: true, opacity: 0.95 });
+
+const ghostMesh = new THREE.Mesh(baseGeo, new THREE.MeshLambertMaterial({ color: 0x85b7eb, transparent: true, opacity: 0.35 }));
+ghostMesh.add(new THREE.LineSegments(edgeGeo, new THREE.LineBasicMaterial({ color: 0x378add, transparent: true, opacity: 0.7 })));
+ghostMesh.visible = false; scene.add(ghostMesh);
+
+const key = (x, y, z) => `${x},${y},${z}`;
+const applyXray = () => Object.values(cubes).forEach(({ mesh, edge }) => { mesh.material = xray ? mkXrayMat() : mkSolidMat(); edge.material = xray ? mkEdgeXMat() : mkEdgeMat(); });
+
+function addCube(x, y, z) {
+  if (x < 0 || y < 0 || z < 0 || x >= GRID || y >= GRID || z >= GRID) return;
+  const k = key(x, y, z); if (cubes[k]) return;
+  const mesh = new THREE.Mesh(baseGeo, xray ? mkXrayMat() : mkSolidMat());
+  mesh.position.set(x, y, z);
+  const edge = new THREE.LineSegments(edgeGeo, xray ? mkEdgeXMat() : mkEdgeMat());
+  mesh.add(edge); scene.add(mesh);
+  cubes[k] = { mesh, edge, x, y, z };
+  updateUI();
+}
+function removeCube(x, y, z) {
+  const k = key(x, y, z); if (!cubes[k]) return;
+  scene.remove(cubes[k].mesh); delete cubes[k]; updateUI();
+}
+function clearAll() { Object.values(cubes).forEach(c => scene.remove(c.mesh)); cubes = {}; updateUI(); }
+function loadPositions(arr) { clearAll(); arr.forEach(([x, y, z]) => addCube(x, y, z)); }
+
+const PRESETS = {
+  cube2: () => { const p = []; for (let x=0;x<2;x++) for(let y=0;y<2;y++) for(let z=0;z<2;z++) p.push([x,y,z]); return p; },
+  cube3: () => { const p = []; for (let x=0;x<3;x++) for(let y=0;y<3;y++) for(let z=0;z<3;z++) p.push([x,y,z]); return p; },
+  rect:  () => { const p = []; for (let x=0;x<4;x++) for(let y=0;y<3;y++) for(let z=0;z<2;z++) p.push([x,y,z]); return p; },
+  lshape: () => { const s=new Set(); [[0,0],[1,0],[2,0],[3,0],[0,1],[0,2],[0,3]].forEach(([x,y])=>{ for(let z=0;z<2;z++) s.add(`${x},${y},${z}`); }); return [...s].map(k=>k.split(',').map(Number)); },
+  staircase: () => { const p=[]; for(let s=0;s<4;s++) for(let y=0;y<=s;y++) for(let z=0;z<3;z++) p.push([s,y,z]); return p; },
+  tower: () => { const p=[]; for(let y=0;y<4;y++) for(let z=0;z<2;z++) for(let x=0;x<2;x++) p.push([x,y,z]); for(let y=4;y<7;y++) p.push([0,y,0]); return p; }
+};
+
+function updateUI() {
+  document.getElementById('vol-count').textContent = Object.keys(cubes).length;
+  // clear all check results when solid changes
+  ['top','front','side'].forEach(v => {
+    document.getElementById(VIEW_CONFIG[v].result).textContent = '';
+  });
+  // refresh answer panels if visible
+  if (document.getElementById('reveal-area').style.display !== 'none') {
+    drawAnswerView('aTop', 'top');
+    drawAnswerView('aFront', 'front');
+    drawAnswerView('aSide', 'side');
+  }
+}
+
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+function getGround(e) {
+  const rect = c3d.getBoundingClientRect();
+  mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const pt = new THREE.Vector3();
+  raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), pt);
+  return pt;
+}
+function getMeshes() { return Object.values(cubes).map(c => c.mesh); }
+function setRay(e) {
+  const rect = c3d.getBoundingClientRect();
+  mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+}
+
+const drag = { on: false, moved: false, lx: 0, ly: 0 };
+c3d.addEventListener('mousedown', e => { drag.on=true; drag.moved=false; drag.lx=e.clientX; drag.ly=e.clientY; c3d.style.cursor='grabbing'; });
+window.addEventListener('mouseup', () => { drag.on=false; c3d.style.cursor='grab'; });
+window.addEventListener('mousemove', e => {
+  if (!drag.on) return;
+  const dx=e.clientX-drag.lx, dy=e.clientY-drag.ly;
+  if (Math.abs(dx)>2||Math.abs(dy)>2) drag.moved=true;
+  orb.theta -= dx*0.012;
+  orb.phi = Math.max(0.08, Math.min(Math.PI/2-0.04, orb.phi - dy*0.012));
+  drag.lx=e.clientX; drag.ly=e.clientY; camUpdate();
+});
+c3d.addEventListener('mousemove', e => {
+  if (drag.on) { ghostMesh.visible=false; return; }
+  if (mode !== 'add') { ghostMesh.visible=false; return; }
+  setRay(e);
+  const hits = raycaster.intersectObjects(getMeshes());
+  if (hits.length) {
+    const n=hits[0].face.normal.clone(), p=hits[0].object.position.clone().add(n).round();
+    ghostMesh.position.copy(p); ghostMesh.visible=true;
+  } else {
+    const pt=getGround(e);
+    if (pt) { ghostMesh.position.set(Math.round(pt.x),0,Math.round(pt.z)); ghostMesh.visible=true; }
+    else ghostMesh.visible=false;
+  }
+});
+c3d.addEventListener('mouseleave', () => { ghostMesh.visible=false; });
+c3d.addEventListener('click', e => {
+  if (drag.moved) return;
+  setRay(e);
+  const hits = raycaster.intersectObjects(getMeshes());
+  if (mode === 'remove') {
+    if (hits.length) { const p=hits[0].object.position; removeCube(Math.round(p.x),Math.round(p.y),Math.round(p.z)); }
+  } else {
+    if (hits.length) { const n=hits[0].face.normal.clone(),p=hits[0].object.position.clone().add(n).round(); addCube(Math.round(p.x),Math.round(p.y),Math.round(p.z)); }
+    else { const pt=getGround(e); if(pt) addCube(Math.round(pt.x),0,Math.round(pt.z)); }
+  }
+});
+c3d.addEventListener('wheel', e => { orb.radius=Math.max(5,Math.min(36,orb.radius+e.deltaY*0.04)); camUpdate(); e.preventDefault(); }, {passive:false});
+
+document.getElementById('btn-add').addEventListener('click', () => {
+  mode='add'; document.getElementById('mode-badge').textContent='Add mode';
+  document.getElementById('btn-add').classList.add('active'); document.getElementById('btn-remove').classList.remove('active');
+});
+document.getElementById('btn-remove').addEventListener('click', () => {
+  mode='remove'; document.getElementById('mode-badge').textContent='Remove mode';
+  document.getElementById('btn-remove').classList.add('active'); document.getElementById('btn-add').classList.remove('active');
+});
+document.getElementById('btn-clear').addEventListener('click', clearAll);
+document.getElementById('btn-xray').addEventListener('click', function() { xray=!xray; this.classList.toggle('active',xray); this.textContent=xray?'X-ray: ON':'X-ray'; applyXray(); });
+document.getElementById('btn-walls').addEventListener('click', function() { wallsOn=!wallsOn; this.classList.toggle('active',wallsOn); wallGroup.visible=wallsOn; });
+document.getElementById('preset-sel').addEventListener('change', e => { const v=e.target.value; if(v&&PRESETS[v]) loadPositions(PRESETS[v]()); e.target.value=''; });
+
+(function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); })();
+
+loadPositions([[0,0,0],[1,0,0],[2,0,0],[0,0,1],[1,0,1],[0,1,0],[0,2,0]]);
+</script>
+</body>
+</html>
